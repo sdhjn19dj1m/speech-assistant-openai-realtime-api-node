@@ -3,15 +3,21 @@ import WebSocket from 'ws';
 import dotenv from 'dotenv';
 import fastifyFormBody from '@fastify/formbody';
 import fastifyWs from '@fastify/websocket';
+import axios from 'axios';
 
 // Load environment variables from .env file
 dotenv.config();
 
-// Retrieve the OpenAI API key from environment variables.
-const { OPENAI_API_KEY } = process.env;
+// Retrieve the Azure OpenAI and Eleven Labs configurations from environment variables.
+const { AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_MODEL, ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID, PORT = 5050 } = process.env;
 
-if (!OPENAI_API_KEY) {
-    console.error('Missing OpenAI API key. Please set it in the .env file.');
+if (!AZURE_OPENAI_API_KEY || !AZURE_OPENAI_ENDPOINT || !AZURE_OPENAI_MODEL) {
+    console.error('Missing Azure OpenAI configuration. Please set AZURE_OPENAI_API_KEY, AZURE_OPENAI_ENDPOINT, and AZURE_OPENAI_MODEL in the .env file.');
+    process.exit(1);
+}
+
+if (!ELEVENLABS_API_KEY || !ELEVENLABS_VOICE_ID) {
+    console.error('Missing Eleven Labs configuration. Please set ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID in the .env file.');
     process.exit(1);
 }
 
@@ -22,8 +28,6 @@ fastify.register(fastifyWs);
 
 // Constants
 const SYSTEM_MESSAGE = 'You are a helpful and bubbly AI assistant who loves to chat about anything the user is interested about and is prepared to offer them facts. You have a penchant for dad jokes, owl jokes, and rickrolling – subtly. Always stay positive, but work in a joke when appropriate.';
-const VOICE = 'alloy';
-const PORT = process.env.PORT || 5050; // Allow dynamic port assignment
 
 // List of Event Types to log to the console. See the OpenAI Realtime API Documentation: https://platform.openai.com/docs/api-reference/realtime
 const LOG_EVENT_TYPES = [
@@ -73,9 +77,9 @@ fastify.register(async (fastify) => {
         let markQueue = [];
         let responseStartTimestampTwilio = null;
 
-        const openAiWs = new WebSocket('wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01', {
+        const openAiWs = new WebSocket(`${AZURE_OPENAI_ENDPOINT}/v1/realtime?model=${AZURE_OPENAI_MODEL}`, {
             headers: {
-                Authorization: `Bearer ${OPENAI_API_KEY}`,
+                Authorization: `Bearer ${AZURE_OPENAI_API_KEY}`,
                 "OpenAI-Beta": "realtime=v1"
             }
         });
@@ -88,7 +92,6 @@ fastify.register(async (fastify) => {
                     turn_detection: { type: 'server_vad' },
                     input_audio_format: 'g711_ulaw',
                     output_audio_format: 'g711_ulaw',
-                    voice: VOICE,
                     instructions: SYSTEM_MESSAGE,
                     modalities: ["text", "audio"],
                     temperature: 0.8,
@@ -172,7 +175,7 @@ fastify.register(async (fastify) => {
         });
 
         // Listen for messages from the OpenAI WebSocket (and send to Twilio if necessary)
-        openAiWs.on('message', (data) => {
+        openAiWs.on('message', async (data) => {
             try {
                 const response = JSON.parse(data);
 
@@ -180,11 +183,27 @@ fastify.register(async (fastify) => {
                     console.log(`Received event: ${response.type}`, response);
                 }
 
-                if (response.type === 'response.audio.delta' && response.delta) {
+                if (response.type === 'response.text.delta' && response.delta) {
+                    // Convert text to speech using Eleven Labs API
+                    const ttsResponse = await axios.post(`https://api.elevenlabs.io/v1/text-to-speech/${ELEVENLABS_VOICE_ID}`, {
+                        text: response.delta,
+                        voice_settings: {
+                            stability: 0.5,
+                            similarity_boost: 0.75
+                        }
+                    }, {
+                        headers: {
+                            'xi-api-key': ELEVENLABS_API_KEY,
+                            'Content-Type': 'application/json'
+                        },
+                        responseType: 'arraybuffer'
+                    });
+
+                    const audioBuffer = Buffer.from(ttsResponse.data, 'binary');
                     const audioDelta = {
                         event: 'media',
                         streamSid: streamSid,
-                        media: { payload: Buffer.from(response.delta, 'base64').toString('base64') }
+                        media: { payload: audioBuffer.toString('base64') }
                     };
                     connection.send(JSON.stringify(audioDelta));
 
@@ -205,12 +224,12 @@ fastify.register(async (fastify) => {
                     handleSpeechStartedEvent();
                 }
             } catch (error) {
-                console.error('Error processing OpenAI message:', error, 'Raw message:', data);
+                console.error('Error processing OpenAI message or Eleven Labs TTS:', error, 'Raw message:', data);
             }
         });
 
         // Handle incoming messages from Twilio
-        connection.on('message', (message) => {
+        connection.on('message', async (message) => {
             try {
                 const data = JSON.parse(message);
 
@@ -265,6 +284,7 @@ fastify.register(async (fastify) => {
     });
 });
 
+// Start the Fastify server
 fastify.listen({ port: PORT }, (err) => {
     if (err) {
         console.error(err);
