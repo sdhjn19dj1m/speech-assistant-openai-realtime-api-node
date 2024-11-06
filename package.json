@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node index.js"
   },
   "keywords": [],
   "author": "",
@@ -13,6 +13,7 @@
   "dependencies": {
     "@fastify/formbody": "^8.0.0",
     "@fastify/websocket": "^11.0.0",
+    "axios": "^1.7.7",
     "dotenv": "^16.4.5",
     "fastify": "^5.0.0",
     "ws": "^8.18.0"
