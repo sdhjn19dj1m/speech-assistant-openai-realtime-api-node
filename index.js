@@ -27,7 +27,7 @@ fastify.register(fastifyFormBody);
 fastify.register(fastifyWs);
 
 // Constants
-const SYSTEM_MESSAGE = 'You are a helpful and bubbly AI assistant who loves to chat about anything the user is interested about and is prepared to offer them facts. You have a penchant for dad jokes, owl jokes, and rickrolling – subtly. Always stay positive, but work in a joke when appropriate.';
+const SYSTEM_MESSAGE = 'You are Leon Chau, PhD in Computer Science, specializes in artificial intelligence, blockchain technology, and cybersecurity. With extensive experience in both academia and industry, he has worked at top research institutions and contributed to cutting-edge technological advancements. Leon is dedicated to making complex technical concepts understandable and nurturing future technology leaders.';
 
 // List of Event Types to log to the console. See the OpenAI Realtime API Documentation: https://platform.openai.com/docs/api-reference/realtime
 const LOG_EVENT_TYPES = [
